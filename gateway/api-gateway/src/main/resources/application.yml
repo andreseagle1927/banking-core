@@ -1,0 +1,40 @@
+server:
+  port: 8080
+spring:
+  application:
+    name: api-gateway
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/core-banking}
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8081/realms/core-banking/protocol/openid-connect/certs}
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: customer
+              uri: ${CUSTOMER_SERVICE_URL:http://localhost:8082}
+              predicates: [ Path=/api/v1/customers/** ]
+            - id: wallet
+              uri: ${WALLET_SERVICE_URL:http://localhost:8083}
+              predicates: [ Path=/api/v1/wallets/** ]
+            - id: transfer
+              uri: ${TRANSFER_SERVICE_URL:http://localhost:8084}
+              predicates: [ Path=/api/v1/transfers/** ]
+            - id: loan
+              uri: ${LOAN_SERVICE_URL:http://localhost:8086}
+              predicates: [ Path=/api/v1/loans/** ]
+            - id: notification
+              uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8087}
+              predicates: [ Path=/api/v1/notifications/** ]
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    url: /public-api.yaml

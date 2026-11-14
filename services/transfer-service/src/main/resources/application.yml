@@ -1,0 +1,43 @@
+server:
+  port: ${SERVER_PORT:8084}
+spring:
+  application:
+    name: transfer-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/transfer_db}
+    username: ${DB_USERNAME:transfer_user}
+    password: ${DB_PASSWORD:transfer_pass}
+  flyway:
+    enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+  security:
+    oauth2:
+      client:
+        registration:
+          ledger-service:
+            provider: keycloak
+            client-id: ${LEDGER_CLIENT_ID:transfer-service}
+            client-secret: ${LEDGER_CLIENT_SECRET:transfer-local-secret}
+            client-authentication-method: client_secret_basic
+            authorization-grant-type: client_credentials
+        provider:
+          keycloak:
+            token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8081/realms/core-banking/protocol/openid-connect/token}
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/core-banking}
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8081/realms/core-banking/protocol/openid-connect/certs}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

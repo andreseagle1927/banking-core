@@ -1,0 +1,12 @@
+CREATE USER customer_user PASSWORD 'customer_local';
+CREATE USER wallet_user PASSWORD 'wallet_local';
+CREATE USER transfer_user PASSWORD 'transfer_local';
+CREATE USER ledger_user PASSWORD 'ledger_local';
+CREATE USER loan_user PASSWORD 'loan_local';
+CREATE USER notification_user PASSWORD 'notification_local';
+CREATE DATABASE customer_db OWNER customer_user;
+CREATE DATABASE wallet_db OWNER wallet_user;
+CREATE DATABASE transfer_db OWNER transfer_user;
+CREATE DATABASE ledger_db OWNER ledger_user;
+CREATE DATABASE loan_db OWNER loan_user;
+CREATE DATABASE notification_db OWNER notification_user;

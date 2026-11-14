@@ -1,0 +1,376 @@
+openapi: 3.1.0
+info:
+  title: Core Banking API
+  version: 1.0.0
+  summary: HTTP API available in the local prototype
+  description: |
+    Documents every implemented controller endpoint. Customer, Wallet, and Loan
+    routes are authenticated scaffolds, not implemented business workflows.
+    Public routes use the API Gateway. Ledger routes are internal local APIs and
+    must remain private in deployed environments.
+servers:
+  - url: http://localhost:8080
+    description: Local API Gateway for public application routes
+security:
+  - bearerAuth: []
+tags:
+  - name: Customer
+    description: Authenticated customer profile scaffold.
+  - name: Wallet
+    description: Authenticated wallet scaffold; Ledger owns authoritative balances.
+  - name: Transfers
+    description: Same-currency transfers with idempotent retries.
+  - name: Loans
+    description: Authenticated loan service scaffold; lending workflows are not implemented.
+  - name: Notifications
+    description: Notifications belonging to the authenticated wallet owner.
+  - name: Ledger (internal)
+    description: Internal accounting endpoints. Direct local port 8085; role protected.
+paths:
+  /api/v1/customers/me:
+    get:
+      tags: [Customer]
+      operationId: getCurrentCustomer
+      summary: Get the current customer placeholder
+      description: Returns a scaffold response. Customer profile persistence and onboarding are not implemented.
+      responses:
+        "200":
+          description: Placeholder response, not a stored customer profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScaffoldResponse" }
+              example: { status: skeleton, service: customer-service, note: "Customer profile endpoints are scaffolded; persistence is not implemented yet." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/wallets/me:
+    get:
+      tags: [Wallet]
+      operationId: getCurrentWallet
+      summary: Get the current wallet placeholder
+      description: Returns a scaffold response. Wallet lifecycle is not implemented; balances belong to Ledger.
+      responses:
+        "200":
+          description: Placeholder response, not a stored wallet or balance.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScaffoldResponse" }
+              example: { status: skeleton, service: wallet-service, note: "Wallet lifecycle is scaffolded; authoritative balances belong to Ledger." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/transfers:
+    post:
+      tags: [Transfers]
+      operationId: createTransfer
+      summary: Create or safely retry a same-currency transfer
+      description: |
+        Sender identity is derived from the JWT subject; do not submit senderId.
+        Reuse the same Idempotency-Key and identical body when retrying. A pending
+        response means the Ledger result is ambiguous and can be reconciled by retry.
+        V1 has no foreign-exchange conversion and supports two-decimal currencies.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          description: Stable client-generated identifier reused for retries.
+          schema: { type: string, minLength: 1, maxLength: 128 }
+          example: transfer-checkout-2026-001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTransferRequest" }
+            example:
+              recipientWalletId: 22222222-2222-4222-8222-222222222222
+              amount: "100.00"
+              currency: USD
+      responses:
+        "200":
+          description: Ledger posting completed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transfer" }
+              example:
+                transferId: 8f6e86fd-65da-49bb-94d3-a6f68c26bb53
+                status: COMPLETED
+                senderWalletId: 11111111-1111-4111-8111-111111111111
+                recipientWalletId: 22222222-2222-4222-8222-222222222222
+                amount: "100.00"
+                currency: USD
+                ledgerTransactionId: e2268eea-a25b-41e2-9fd0-34f95d60306c
+        "202":
+          description: Posting is pending or ambiguous; retry with the same key and body.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transfer" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: Idempotency key was reused with a different request. }
+        "422": { description: Rejected for insufficient funds, invalid account, amount, or currency. }
+
+  /api/v1/transfers/{transferId}:
+    get:
+      tags: [Transfers]
+      operationId: getTransfer
+      summary: Get a transfer visible to the caller
+      description: Only the sender or recipient can read it; other callers receive not found.
+      parameters:
+        - in: path
+          name: transferId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Transfer status and Ledger reference.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transfer" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: Transfer does not exist or caller is not a participant. }
+
+  /api/v1/loans:
+    get:
+      tags: [Loans]
+      operationId: getLoansPlaceholder
+      summary: Get the loan service placeholder
+      description: Applications, underwriting, contracts, schedules, and repayments are not implemented.
+      responses:
+        "200":
+          description: Placeholder response, not a list of loan contracts.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScaffoldResponse" }
+              example: { status: skeleton, service: loan-service, note: "Loan origination and repayment schedule are not implemented yet." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/notifications/me:
+    get:
+      tags: [Notifications]
+      operationId: listMyNotifications
+      summary: List recent notifications for the current wallet owner
+      description: Wallet identity comes from the JWT subject. Returns up to 100 recent records.
+      responses:
+        "200":
+          description: Notifications owned by the authenticated wallet.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Notification" }
+              example:
+                - id: 4e77fd63-5a83-4bd8-848e-fc19c562ed85
+                  transferId: 8f6e86fd-65da-49bb-94d3-a6f68c26bb53
+                  type: TRANSFER_COMPLETED
+                  message: "Transfer completed: USD 100.00"
+                  createdAt: "2026-11-14T15:00:00Z"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /internal/ledger/accounts:
+    servers:
+      - url: http://localhost:8085
+        description: Direct local Ledger port; internal API, not routed through the Gateway.
+    post:
+      tags: ["Ledger (internal)"]
+      operationId: createLedgerAccount
+      summary: Provision a wallet currency account
+      description: Requires the platform-operator realm role. Provisioning does not fund the account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LedgerAccountRequest" }
+            example: { walletId: 11111111-1111-4111-8111-111111111111, currency: USD }
+      responses:
+        "200":
+          description: Account is active.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedgerAccountResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { description: Currency is unsupported or does not have two minor-unit digits. }
+
+  /internal/ledger/funding:
+    servers:
+      - url: http://localhost:8085
+        description: Direct local Ledger port; internal API, not routed through the Gateway.
+    post:
+      tags: ["Ledger (internal)"]
+      operationId: postSimulatedFunding
+      summary: Simulate controlled platform funding
+      description: Requires platform-operator. operationId is idempotent. This is simulated funding, not external settlement.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LedgerFundingRequest" }
+            example:
+              operationId: 61175582-8175-43e6-8f72-414ac5da4dcb
+              walletId: 11111111-1111-4111-8111-111111111111
+              amount: "500.00"
+              currency: USD
+      responses:
+        "200":
+          description: Funding journal posted, or original result returned for identical retry.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedgerPostingResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: operationId was reused with a different request. }
+        "422": { description: Invalid account, amount, or currency. }
+
+  /internal/ledger/transfers:
+    servers:
+      - url: http://localhost:8085
+        description: Direct local Ledger port; internal API, not routed through the Gateway.
+    post:
+      tags: ["Ledger (internal)"]
+      operationId: postLedgerTransfer
+      summary: Post a balanced transfer journal
+      description: Requires ledger-poster, assigned to the Transfer Service identity. Customers should use POST /api/v1/transfers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LedgerTransferRequest" }
+            example:
+              operationId: 8f6e86fd-65da-49bb-94d3-a6f68c26bb53
+              senderWalletId: 11111111-1111-4111-8111-111111111111
+              recipientWalletId: 22222222-2222-4222-8222-222222222222
+              amount: "100.00"
+              currency: USD
+      responses:
+        "200":
+          description: Balanced journal posted, or original result returned for identical retry.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedgerPostingResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: operationId was reused with a different request. }
+        "422": { description: Insufficient funds or invalid account, amount, or currency. }
+
+  /internal/ledger/accounts/{walletId}/balances/{currency}:
+    servers:
+      - url: http://localhost:8085
+        description: Direct local Ledger port; internal API, not routed through the Gateway.
+    get:
+      tags: ["Ledger (internal)"]
+      operationId: getLedgerBalance
+      summary: Read the authoritative Ledger balance
+      description: Customers may read only their own wallet; platform-operator may read any wallet. balanceMinor uses integer minor units.
+      parameters:
+        - in: path
+          name: walletId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: currency
+          required: true
+          schema: { type: string, pattern: "^[A-Z]{3}$" }
+      responses:
+        "200":
+          description: Current materialized balance.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedgerBalance" }
+              example: { walletId: 11111111-1111-4111-8111-111111111111, currency: USD, balanceMinor: 40000 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: Account is missing, inactive, or not visible to this caller. }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Use a JWT issued by the local Keycloak core-banking realm.
+  responses:
+    BadRequest:
+      description: Request body or required header failed validation.
+    Unauthorized:
+      description: Missing or invalid bearer access token.
+    Forbidden:
+      description: Valid token lacks the required realm role.
+  schemas:
+    ScaffoldResponse:
+      type: object
+      required: [status, service, note]
+      properties:
+        status: { type: string, const: skeleton }
+        service: { type: string }
+        note: { type: string }
+    CreateTransferRequest:
+      type: object
+      additionalProperties: false
+      required: [recipientWalletId, amount, currency]
+      properties:
+        recipientWalletId: { type: string, format: uuid, description: Recipient wallet UUID. }
+        amount: { type: string, pattern: "^[0-9]{1,16}\\.[0-9]{2}$", description: Positive decimal amount with exactly two fractional digits. }
+        currency: { type: string, pattern: "^[A-Z]{3}$", description: Same currency for sender and recipient; FX is not performed. }
+    Transfer:
+      type: object
+      required: [transferId, status, senderWalletId, recipientWalletId, amount, currency]
+      properties:
+        transferId: { type: string, format: uuid }
+        status: { type: string, enum: [PENDING, COMPLETED, REJECTED] }
+        senderWalletId: { type: string, format: uuid }
+        recipientWalletId: { type: string, format: uuid }
+        amount: { type: string, example: "100.00" }
+        currency: { type: string, example: USD }
+        ledgerTransactionId: { type: string, format: uuid, nullable: true }
+        failureReason: { type: string, nullable: true }
+    Notification:
+      type: object
+      required: [id, transferId, type, message, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        transferId: { type: string, format: uuid }
+        type: { type: string, const: TRANSFER_COMPLETED }
+        message: { type: string }
+        createdAt: { type: string, format: date-time }
+    LedgerAccountRequest:
+      type: object
+      required: [walletId, currency]
+      properties:
+        walletId: { type: string, format: uuid }
+        currency: { type: string, pattern: "^[A-Z]{3}$" }
+    LedgerAccountResponse:
+      type: object
+      properties:
+        walletId: { type: string, format: uuid }
+        currency: { type: string }
+        status: { type: string, const: ACTIVE }
+    LedgerFundingRequest:
+      type: object
+      required: [operationId, walletId, amount, currency]
+      properties:
+        operationId: { type: string, format: uuid, description: Stable id for retries of this posting. }
+        walletId: { type: string, format: uuid }
+        amount: { type: string, pattern: "^[0-9]{1,16}\\.[0-9]{2}$" }
+        currency: { type: string, pattern: "^[A-Z]{3}$" }
+    LedgerTransferRequest:
+      type: object
+      required: [operationId, senderWalletId, recipientWalletId, amount, currency]
+      properties:
+        operationId: { type: string, format: uuid, description: Stable id for retries of this posting. }
+        senderWalletId: { type: string, format: uuid }
+        recipientWalletId: { type: string, format: uuid }
+        amount: { type: string, pattern: "^[0-9]{1,16}\\.[0-9]{2}$" }
+        currency: { type: string, pattern: "^[A-Z]{3}$" }
+    LedgerPostingResponse:
+      type: object
+      properties:
+        ledgerTransactionId: { type: string, format: uuid }
+        status: { type: string, const: POSTED }
+        operationId: { type: string, format: uuid }
+        type: { type: string }
+        amountMinor: { type: integer, format: int64 }
+        currency: { type: string }
+    LedgerBalance:
+      type: object
+      required: [walletId, currency, balanceMinor]
+      properties:
+        walletId: { type: string, format: uuid }
+        currency: { type: string }
+        balanceMinor: { type: integer, format: int64, description: Integer minor units; for USD, 10000 means USD 100.00. }

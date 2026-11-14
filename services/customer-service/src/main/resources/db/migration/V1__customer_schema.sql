@@ -1,0 +1,9 @@
+CREATE TABLE customer_profiles (
+  id UUID PRIMARY KEY,
+  identity_subject VARCHAR(128) NOT NULL UNIQUE,
+  first_name VARCHAR(120) NOT NULL,
+  last_name VARCHAR(120) NOT NULL,
+  email VARCHAR(254) NOT NULL,
+  status VARCHAR(24) NOT NULL CHECK (status IN ('PENDING','ACTIVE','SUSPENDED','CLOSED')),
+  created_at TIMESTAMPTZ NOT NULL
+);
