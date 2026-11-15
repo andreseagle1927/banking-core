@@ -1,16 +1,7 @@
 version: 2
 updates:
   - package-ecosystem: maven
-    directories:
-      - /
-      - /gateway/api-gateway
-      - /platform/platform-security
-      - /services/customer-service
-      - /services/wallet-service
-      - /services/transfer-service
-      - /services/ledger-service
-      - /services/loan-service
-      - /services/notification-service
+    directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
