@@ -2,7 +2,7 @@
 
 ## Product and operating assumptions
 
-The prototype is a closed-loop digital banking system for up to 100,000 registered users. A customer has one wallet with multiple currency pockets. V1 transfers are same-currency only; FX is out of scope. Platform funding is simulated and controlled. Loan underwriting and monthly repayment are target capabilities, not yet implemented workflows. A single local PostgreSQL server hosts logical databases; service ownership and migration histories remain separate.
+The prototype is a closed-loop digital banking system for up to 100,000 registered users. A customer has one wallet with multiple currency pockets. V1 transfers are same-currency only; FX is out of scope. Platform funding is simulated and controlled. Customer onboarding, wallet lifecycle, transfers, rule-based loan origination, monthly repayment, and notification delivery are implemented prototype workflows. A single local PostgreSQL server hosts logical databases; service ownership and migration histories remain separate.
 
 The initial illustrative performance goals (100 transfers/s, 500 balance reads/s, p95 transfer latency below 500 ms) are test hypotheses, not measured capacity guarantees. Local Compose is for development/integration, not availability guarantees.
 
@@ -10,18 +10,18 @@ The initial illustrative performance goals (100 transfers/s, 500 balance reads/s
 
 | Component | Owns | Runtime state today |
 |---|---|---|
-| Customer | Profile, onboarding, customer status | Authenticated placeholder API |
-| Wallet | Wallet lifecycle, ownership, supported currency pockets | Authenticated placeholder API; schema stores ownership/currencies, no balances |
+| Customer | Profile and onboarding keyed to the authenticated identity | PostgreSQL profile; local prototype activates self-onboarded customers without real KYC |
+| Wallet | One wallet per customer, wallet status, currency pockets | PostgreSQL ownership/pocket state; reads balances from Ledger |
 | Transfer | Request limits, idempotency, transfer status | PostgreSQL and Flyway; same-currency workflow implemented |
 | Ledger | Accounts, journals, materialized balances, atomic postings | PostgreSQL and Flyway; simulated funding and transfers implemented |
-| Loan | Applications, deterministic decisions, contracts, installments | Authenticated placeholder API |
-| Notification | Delivery and notification history | Kafka consumer, durable event deduplication, PostgreSQL records, authenticated per-owner read API; external delivery is not implemented |
+| Loan | Applications, deterministic decisions, contracts, installments, repayment attempts | PostgreSQL lifecycle state; Ledger owns all monetary postings; daily due-installment scheduler |
+| Notification | Delivery and notification history | Kafka consumer, durable event deduplication, PostgreSQL in-app records and retryable email queue; local email is captured by Mailpit |
 | API Gateway | Routing and JWT authentication | Spring Cloud Gateway; stateless |
 | Keycloak | Identities, credentials, OAuth2/OIDC tokens | Local development realm with Alice and Bob |
 
 Customer, Wallet, Transfer, Ledger, Loan, and Notification own logical databases and users. All six services use Hibernate/Spring Data JPA mappings validated against Flyway-owned schemas. No JPA entities, repositories, or business models cross service boundaries. `platform-security` shares only the HTTP security filter configuration.
 
-The implemented financial workflow follows hexagonal boundaries: HTTP controllers and the Kafka listener are inbound adapters; application services coordinate use cases through domain types and outbound ports; Hibernate/JPA, Ledger REST, and Kafka/outbox adapters implement those ports. Transfer and Ledger contain the posting workflow, while Notification applies the same separation to event processing and persisted reads. Customer, Wallet, and Loan have initial persistence mappings but remain small authenticated API stubs until their use cases are added.
+The implemented workflows follow hexagonal boundaries: HTTP controllers, scheduled jobs, and the Kafka listener are inbound adapters; application services coordinate use cases through domain types and outbound ports; Hibernate/JPA, Keycloak-protected REST clients, SMTP, and Kafka/outbox adapters implement those ports. Ledger alone owns financial postings; Loan owns loan contracts and repayment schedules, and Wallet owns wallet and currency-pocket lifecycle state.
 
 ## Topology and command path
 
@@ -71,4 +71,4 @@ PostgreSQL owns authoritative records. Redis is reserved for non-authoritative c
 
 ## Deferred production work
 
-Not implemented: full customer onboarding and ownership mapping; wallet provisioning; transfer limits and customer eligibility checks; external email/SMS/push delivery; loan applications, deterministic underwriting, amortization, disbursement, repayments and their outbox events; reconciliation and audit workflow; production secret rotation and mTLS/TLS; production MFA policy, rate limiting, observability/alerts, backup/restore automation, and load/resilience testing. The security filter requires a valid JWT; customer-level object access is implemented for transfers, notifications, and Ledger balance reads, but broader business authorization remains pending in the customer and wallet domains.
+Prototype limits and remaining work: Customer onboarding activates a profile without real KYC or customer-status review; transfer limits and richer eligibility checks are not implemented; email is captured locally and SMS/push are out of scope; Loan events, financial reconciliation, and audit workflows remain future work. Production secret rotation, TLS/mTLS, MFA policy, rate limiting, observability/alerts, backup/restore automation, and load/resilience testing are not configured. The system and local demo do not provide production banking, custody, settlement, or lending controls.

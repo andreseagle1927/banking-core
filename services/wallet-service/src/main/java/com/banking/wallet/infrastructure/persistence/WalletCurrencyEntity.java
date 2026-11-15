@@ -18,4 +18,11 @@ public class WalletCurrencyEntity {
     @Column(nullable = false, length = 16) private String status;
     @Column(name = "created_at", nullable = false) private Instant createdAt;
     protected WalletCurrencyEntity() { }
+    public WalletCurrencyEntity(UUID id, UUID walletId, String currency, String status, Instant createdAt) { this.id=id; this.walletId=walletId; this.currency=currency; this.status=status; this.createdAt=createdAt; }
+    public UUID getId() { return id; }
+    public UUID getWalletId() { return walletId; }
+    public String getCurrency() { return currency; }
+    public String getStatus() { return status; }
+    public Instant getCreatedAt() { return createdAt; }
+    public void setStatus(String status) { this.status=status; }
 }

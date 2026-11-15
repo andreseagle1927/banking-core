@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.banking.notification.application.NotificationApplicationService;
+import com.banking.notification.application.port.out.CustomerContactPort;
 import com.banking.notification.domain.TransferCompletedEvent;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
@@ -13,6 +14,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import java.util.Optional;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -25,6 +30,10 @@ class PersistenceSchemaTest {
 
     @Autowired private EntityManager entityManager;
     @Autowired private NotificationApplicationService notifications;
+    @MockBean private CustomerContactPort contacts;
+
+    @org.junit.jupiter.api.BeforeEach
+    void noExternalContactsForPersistenceTest(){when(contacts.emailFor(any())).thenReturn(Optional.empty());}
 
     @DynamicPropertySource
     static void databaseProperties(DynamicPropertyRegistry registry) {

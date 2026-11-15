@@ -6,4 +6,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface LoanApplicationJpaRepository extends JpaRepository<LoanApplicationEntity, UUID> {
     List<LoanApplicationEntity> findByCustomerIdOrderBySubmittedAtDesc(UUID customerId);
+    java.util.Optional<LoanApplicationEntity> findByIdAndCustomerId(UUID id,UUID customerId);
+    java.util.Optional<LoanApplicationEntity> findByCustomerIdAndIdempotencyKey(UUID customerId,String idempotencyKey);
 }

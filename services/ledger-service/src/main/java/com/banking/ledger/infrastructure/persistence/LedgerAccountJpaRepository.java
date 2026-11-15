@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 
 public interface LedgerAccountJpaRepository extends JpaRepository<LedgerAccountEntity, UUID> {
     Optional<LedgerAccountEntity> findByOwnerIdAndCurrency(UUID ownerId, String currency);
+    Optional<LedgerAccountEntity> findByOwnerIdAndCurrencyAndAccountType(UUID ownerId, String currency, String accountType);
     Optional<LedgerAccountEntity> findByOwnerIdAndCurrencyAndStatusAndAccountType(UUID ownerId, String currency, String status, String accountType);
 
     @Modifying
@@ -16,6 +17,6 @@ public interface LedgerAccountJpaRepository extends JpaRepository<LedgerAccountE
     int insertAccountIfAbsent(@Param("id") UUID id, @Param("ownerId") UUID ownerId,
                               @Param("currency") String currency, @Param("accountType") String accountType);
 
-    @Query("select b.balanceMinor from AccountBalanceEntity b join LedgerAccountEntity a on a.id = b.ledgerAccountId where a.ownerId = :ownerId and a.currency = :currency and a.status = 'ACTIVE' and a.accountType = 'CUSTOMER_WALLET'")
+    @Query("select b.balanceMinor from AccountBalanceEntity b join LedgerAccountEntity a on a.id = b.ledgerAccountId where a.ownerId = :ownerId and a.currency = :currency and a.accountType = 'CUSTOMER_WALLET'")
     Optional<Long> findActiveWalletBalance(@Param("ownerId") UUID ownerId, @Param("currency") String currency);
 }

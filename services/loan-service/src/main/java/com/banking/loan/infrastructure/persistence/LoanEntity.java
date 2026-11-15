@@ -21,5 +21,8 @@ public class LoanEntity {
     @Column(name = "term_months", nullable = false) private int termMonths;
     @Column(nullable = false, length = 16) private String status;
     @Column(name = "created_at", nullable = false) private Instant createdAt;
+    @Column(name = "ledger_transaction_id") private UUID ledgerTransactionId;
     protected LoanEntity() { }
+    public LoanEntity(UUID id,UUID applicationId,UUID customerId,BigDecimal principalAmount,String currency,BigDecimal annualRate,int termMonths,String status,Instant createdAt,UUID ledgerTransactionId){this.id=id;this.applicationId=applicationId;this.customerId=customerId;this.principalAmount=principalAmount;this.currency=currency;this.annualRate=annualRate;this.termMonths=termMonths;this.status=status;this.createdAt=createdAt;this.ledgerTransactionId=ledgerTransactionId;}
+    public UUID getId(){return id;} public UUID getApplicationId(){return applicationId;} public UUID getCustomerId(){return customerId;} public BigDecimal getPrincipalAmount(){return principalAmount;} public String getCurrency(){return currency;} public BigDecimal getAnnualRate(){return annualRate;} public int getTermMonths(){return termMonths;} public String getStatus(){return status;} public Instant getCreatedAt(){return createdAt;} public UUID getLedgerTransactionId(){return ledgerTransactionId;} public void setStatus(String status){this.status=status;}
 }

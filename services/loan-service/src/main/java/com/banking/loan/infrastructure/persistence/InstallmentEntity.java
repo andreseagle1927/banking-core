@@ -20,4 +20,6 @@ public class InstallmentEntity {
     @Column(name = "due_date", nullable = false) private LocalDate dueDate;
     @Column(nullable = false, length = 16) private String status;
     protected InstallmentEntity() { }
+    public InstallmentEntity(UUID id,UUID loanId,int installmentNumber,BigDecimal principalDue,BigDecimal interestDue,BigDecimal totalDue,LocalDate dueDate,String status){this.id=id;this.loanId=loanId;this.installmentNumber=installmentNumber;this.principalDue=principalDue;this.interestDue=interestDue;this.totalDue=totalDue;this.dueDate=dueDate;this.status=status;}
+    public UUID getId(){return id;} public UUID getLoanId(){return loanId;} public int getInstallmentNumber(){return installmentNumber;} public BigDecimal getPrincipalDue(){return principalDue;} public BigDecimal getInterestDue(){return interestDue;} public BigDecimal getTotalDue(){return totalDue;} public LocalDate getDueDate(){return dueDate;} public String getStatus(){return status;} public void setStatus(String status){this.status=status;}
 }

@@ -29,6 +29,14 @@ public class LedgerPostingService {
     }
 
     @Transactional
+    public void setWalletAccountStatus(UUID walletId,String currency,String status) {
+        ensureCurrency(currency);
+        if (!List.of("ACTIVE","BLOCKED","CLOSED").contains(status)) throw new InvalidAccount("Unsupported account status");
+        try { store.setWalletAccountStatus(walletId,currency,status); }
+        catch (IllegalArgumentException | LedgerStore.AccountStateException ex) { throw new InvalidAccount(ex.getMessage()); }
+    }
+
+    @Transactional
     public Map<String, Object> fund(UUID operationId, UUID walletId, BigDecimal amount, String currency) {
         long minor = toMinor(amount, currency);
         String requestHash = hash("FUNDING", walletId.toString(), Long.toString(minor), currency);
@@ -44,6 +52,43 @@ public class LedgerPostingService {
         store.adjustBalance(customerAccount, minor);
         store.adjustBalance(fundingAccount, -minor);
         return result(journalId, minor, currency);
+    }
+
+    @Transactional
+    public Map<String,Object> disburseLoan(UUID operationId,UUID loanId,UUID walletId,BigDecimal amount,String currency) {
+        long minor=toMinor(amount,currency);
+        String requestHash=hash("LOAN_DISBURSEMENT",loanId.toString(),walletId.toString(),Long.toString(minor),currency);
+        Map<String,Object> previous=existing(operationId,requestHash);
+        if (previous!=null) return previous;
+        UUID wallet=accountId(walletId,currency);
+        UUID receivable=store.ensurePlatformAccount(currency,"LOAN_RECEIVABLE");
+        UUID journalId=UUID.randomUUID(); store.insertJournal(journalId,operationId,"LOAN_DISBURSEMENT",requestHash);
+        lockAccounts(List.of(wallet,receivable));
+        store.appendEntry(journalId,receivable,minor,0);
+        store.appendEntry(journalId,wallet,0,minor);
+        store.adjustBalance(receivable,minor); store.adjustBalance(wallet,minor);
+        return result(journalId,minor,currency);
+    }
+
+    @Transactional
+    public Map<String,Object> repayLoan(UUID operationId,UUID loanId,UUID walletId,BigDecimal principal,BigDecimal interest,String currency) {
+        long principalMinor=toMinor(principal,currency), interestMinor=toMinor(interest,currency);
+        if (principalMinor<=0 || interestMinor<0) throw new InvalidAmount("Repayment principal must be positive and interest cannot be negative");
+        long totalMinor=Math.addExact(principalMinor,interestMinor);
+        String requestHash=hash("LOAN_REPAYMENT",loanId.toString(),walletId.toString(),Long.toString(principalMinor),Long.toString(interestMinor),currency);
+        Map<String,Object> previous=existing(operationId,requestHash);
+        if (previous!=null) return previous;
+        UUID wallet=accountId(walletId,currency);
+        UUID receivable=store.ensurePlatformAccount(currency,"LOAN_RECEIVABLE");
+        UUID income=store.ensurePlatformAccount(currency,"INTEREST_INCOME");
+        UUID journalId=UUID.randomUUID(); store.insertJournal(journalId,operationId,"LOAN_REPAYMENT",requestHash);
+        Map<UUID,Long> balances=lockAccounts(List.of(wallet,receivable,income));
+        if (balances.get(wallet)<totalMinor) throw new InsufficientFunds("Insufficient spendable balance for loan installment");
+        store.appendEntry(journalId,wallet,totalMinor,0);
+        store.appendEntry(journalId,receivable,0,principalMinor);
+        if (interestMinor>0) store.appendEntry(journalId,income,0,interestMinor);
+        store.adjustBalance(wallet,-totalMinor); store.adjustBalance(receivable,-principalMinor); store.adjustBalance(income,-interestMinor);
+        return result(journalId,totalMinor,currency);
     }
 
     @Transactional

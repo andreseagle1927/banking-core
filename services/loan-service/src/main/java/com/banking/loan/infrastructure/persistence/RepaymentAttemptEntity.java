@@ -18,4 +18,7 @@ public class RepaymentAttemptEntity {
     @Column(name = "attempted_at", nullable = false) private Instant attemptedAt;
     @Column(name = "failure_reason") private String failureReason;
     protected RepaymentAttemptEntity() { }
+    public RepaymentAttemptEntity(UUID id,UUID installmentId,UUID operationId,BigDecimal amount,String status,Instant attemptedAt,String failureReason){this.id=id;this.installmentId=installmentId;this.operationId=operationId;this.amount=amount;this.status=status;this.attemptedAt=attemptedAt;this.failureReason=failureReason;}
+    public UUID getId(){return id;} public UUID getInstallmentId(){return installmentId;} public UUID getOperationId(){return operationId;} public BigDecimal getAmount(){return amount;} public String getStatus(){return status;} public Instant getAttemptedAt(){return attemptedAt;} public String getFailureReason(){return failureReason;}
+    public void record(String status,Instant attemptedAt,String failureReason){this.status=status;this.attemptedAt=attemptedAt;this.failureReason=failureReason;}
 }

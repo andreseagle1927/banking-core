@@ -14,6 +14,17 @@ spring:
     open-in-view: false
   security:
     oauth2:
+      client:
+        registration:
+          ledger-service:
+            provider: keycloak
+            client-id: ${LEDGER_CLIENT_ID:wallet-service}
+            client-secret: ${LEDGER_CLIENT_SECRET:wallet-local-secret}
+            client-authentication-method: client_secret_basic
+            authorization-grant-type: client_credentials
+        provider:
+          keycloak:
+            token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8081/realms/core-banking/protocol/openid-connect/token}
       resourceserver:
         jwt:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/core-banking}
