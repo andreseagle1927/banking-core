@@ -9,7 +9,10 @@ metadata:
     {{- include "core-banking.labels" $root | nindent 4 }}
     app.kubernetes.io/component: {{ $name }}
 spec:
-  type: ClusterIP
+  type: {{ default "ClusterIP" $service.serviceType }}
+  {{- with $service.clusterIP }}
+  clusterIP: {{ . | quote }}
+  {{- end }}
   selector:
     {{- include "core-banking.selectorLabels" $root | nindent 4 }}
     app.kubernetes.io/component: {{ $name }}

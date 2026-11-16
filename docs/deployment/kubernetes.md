@@ -7,6 +7,8 @@ The chart has two profiles:
 - `values-local.yaml` runs single-node PostgreSQL, Kafka, Keycloak and Mailpit in the cluster. PostgreSQL, Kafka and Keycloak use persistent volume claims. Redis is omitted because no service uses it.
 - `values-cloud.yaml` disables in-cluster dependencies and demonstrates provider-neutral external endpoints for PostgreSQL, Kafka, OIDC, and SMTP. Replace example endpoints and image tags before deployment. It is a configuration starting point, not a production environment by itself.
 
+The API gateway Service remains `ClusterIP` by default. On the SSH host, the production values reserve an unused stable ClusterIP for the gateway and the host Nginx reverse proxy routes the public hostname to it. Keep `gatewayIngress.enabled: false` for this topology; do not expose a NodePort.
+
 The local profile includes development-only passwords and demo users. Do not use it on a shared cluster.
 
 ## Local Kind deployment
@@ -78,3 +80,5 @@ Each service applies its own Flyway migrations during startup. Keep schema chang
 ## Validation
 
 The chart validation workflow runs Helm lint and renders both profiles on every push and pull request. The Kind script provides the local container deployment path. The in-cluster PostgreSQL, Kafka, and Keycloak resources are single-replica development dependencies and do not provide production availability guarantees.
+
+For Jenkins CI/CD setup and required credentials, see [jenkins.md](jenkins.md).
