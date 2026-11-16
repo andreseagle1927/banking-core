@@ -4,10 +4,9 @@ info:
   version: 1.0.0
   summary: HTTP API available in the local prototype
   description: |
-    Documents every implemented controller endpoint. Customer, Wallet, and Loan
-    routes are authenticated scaffolds, not implemented business workflows.
-    Public routes use the API Gateway. Ledger routes are internal local APIs and
-    must remain private in deployed environments.
+    Documents implemented controller endpoints. Public routes use the API
+    Gateway. Customer directory, repayment-run, and Ledger routes are internal
+    service APIs and must remain private in deployed environments.
 servers:
   - url: http://localhost:8080
     description: Local API Gateway for public application routes
@@ -15,13 +14,17 @@ security:
   - bearerAuth: []
 tags:
   - name: Customer
-    description: Authenticated customer profile scaffold.
+    description: Customer profiles tied to the authenticated Keycloak subject.
+  - name: Customer (internal)
+    description: Service-to-service customer eligibility and contact lookup.
   - name: Wallet
-    description: Authenticated wallet scaffold; Ledger owns authoritative balances.
+    description: Customer wallet lifecycle; Ledger owns authoritative balances.
   - name: Transfers
     description: Same-currency transfers with idempotent retries.
   - name: Loans
-    description: Authenticated loan service scaffold; lending workflows are not implemented.
+    description: Rule-based loan applications, contracts, schedules, and repayments.
+  - name: Loans (internal)
+    description: Operator-only scheduled repayment trigger.
   - name: Notifications
     description: Notifications belonging to the authenticated wallet owner.
   - name: Ledger (internal)
@@ -31,31 +34,115 @@ paths:
     get:
       tags: [Customer]
       operationId: getCurrentCustomer
-      summary: Get the current customer placeholder
-      description: Returns a scaffold response. Customer profile persistence and onboarding are not implemented.
+      summary: Get the current customer's profile
+      description: Returns the profile associated with the authenticated token subject.
       responses:
         "200":
-          description: Placeholder response, not a stored customer profile.
+          description: Persisted customer profile.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ScaffoldResponse" }
-              example: { status: skeleton, service: customer-service, note: "Customer profile endpoints are scaffolded; persistence is not implemented yet." }
+              schema: { $ref: "#/components/schemas/CustomerProfile" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: The authenticated identity has not completed onboarding. }
+    post:
+      tags: [Customer]
+      operationId: onboardCurrentCustomer
+      summary: Create the authenticated customer's profile
+      description: Creates one active profile per authenticated identity. Identity and customer ID come from the JWT subject.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomerOnboardingRequest" }
+      responses:
+        "201": { description: Profile created, content: { application/json: { schema: { $ref: "#/components/schemas/CustomerProfile" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/v1/customers/internal/{customerId}:
+    get:
+      tags: [Customer (internal)]
+      operationId: getCustomerForService
+      summary: Read a customer for an authorized service
+      description: Requires wallet-provisioner, loan-underwriter, or notification-reader. Internal service use only.
+      parameters:
+        - in: path
+          name: customerId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Customer profile, content: { application/json: { schema: { $ref: "#/components/schemas/CustomerProfile" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: Caller does not have an approved internal role. }
+        "404": { description: Customer profile does not exist. }
+
   /api/v1/wallets/me:
+    post:
+      tags: [Wallet]
+      operationId: openCurrentWallet
+      summary: Open the authenticated customer's wallet
+      description: Creates one wallet with the authenticated customer UUID as its wallet ID. Requires an active customer profile.
+      responses:
+        "201": { description: Wallet opened or existing wallet returned, content: { application/json: { schema: { $ref: "#/components/schemas/Wallet" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: Active customer profile required. }
     get:
       tags: [Wallet]
       operationId: getCurrentWallet
-      summary: Get the current wallet placeholder
-      description: Returns a scaffold response. Wallet lifecycle is not implemented; balances belong to Ledger.
+      summary: Get the current wallet and enabled currency pockets
+      description: Wallet metadata is stored by Wallet Service; monetary balances are available from the balance endpoint and Ledger.
       responses:
         "200":
-          description: Placeholder response, not a stored wallet or balance.
+          description: Persisted wallet and its currency pockets.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ScaffoldResponse" }
-              example: { status: skeleton, service: wallet-service, note: "Wallet lifecycle is scaffolded; authoritative balances belong to Ledger." }
+              schema: { $ref: "#/components/schemas/Wallet" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: Wallet has not been opened. }
+
+  /api/v1/wallets/me/currencies/{currency}:
+    put:
+      tags: [Wallet]
+      operationId: enableWalletCurrency
+      summary: Enable a currency pocket
+      description: Creates the pocket and asks Ledger to provision its authoritative account. V1 supports ISO currencies with two minor-unit digits.
+      parameters:
+        - in: path
+          name: currency
+          required: true
+          schema: { type: string, pattern: "^[A-Z]{3}$" }
+      responses:
+        "200": { description: Currency pocket enabled, content: { application/json: { schema: { $ref: "#/components/schemas/WalletCurrency" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: Wallet is blocked or closed. }
+        "422": { description: Currency is unsupported in V1. }
+
+  /api/v1/wallets/me/balances:
+    get:
+      tags: [Wallet]
+      operationId: getCurrentWalletBalances
+      summary: Read balances for enabled currency pockets
+      description: Reads each amount from Ledger; values are integer minor units and are never stored as an authoritative Wallet balance.
+      responses:
+        "200": { description: Current Ledger balances, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/WalletBalance" } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/wallets/me/status:
+    patch:
+      tags: [Wallet]
+      operationId: changeCurrentWalletStatus
+      summary: Block, reactivate, or close the current wallet
+      description: Updates Ledger account statuses as well as Wallet state. Closing requires every currency balance to be zero; closed wallets cannot be reopened.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [status], properties: { status: { type: string, enum: [ACTIVE, BLOCKED, CLOSED] } } }
+      responses:
+        "200": { description: Wallet status updated, content: { application/json: { schema: { $ref: "#/components/schemas/Wallet" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: A closed wallet cannot be reopened. }
+        "422": { description: Account closure rejected while a Ledger balance is non-zero. }
 
   /api/v1/transfers:
     post:
@@ -130,17 +217,122 @@ paths:
   /api/v1/loans:
     get:
       tags: [Loans]
-      operationId: getLoansPlaceholder
-      summary: Get the loan service placeholder
-      description: Applications, underwriting, contracts, schedules, and repayments are not implemented.
+      operationId: listMyLoans
+      summary: List the current customer's loans
+      description: Returns loan contracts belonging to the authenticated customer.
       responses:
         "200":
-          description: Placeholder response, not a list of loan contracts.
+          description: Customer loan contracts.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ScaffoldResponse" }
-              example: { status: skeleton, service: loan-service, note: "Loan origination and repayment schedule are not implemented yet." }
+              schema: { type: array, items: { $ref: "#/components/schemas/Loan" } }
         "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/loans/applications:
+    post:
+      tags: [Loans]
+      operationId: applyForLoan
+      summary: Submit a rule-based loan application
+      description: Prototype rules approve requests up to 5000.00, terms of 3–36 months, active customers, and total active principal exposure up to 10000.00. The rate is fixed at 12% APR.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoanApplicationRequest" }
+      responses:
+        "201": { description: Decision persisted, content: { application/json: { schema: { $ref: "#/components/schemas/LoanApplication" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: Idempotency key was reused with a different request. }
+        "503": { description: Customer eligibility service is unavailable. }
+    get:
+      tags: [Loans]
+      operationId: listMyLoanApplications
+      summary: List the current customer's loan applications
+      responses:
+        "200": { description: Applications and rule decisions, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/LoanApplication" } } } } }
+
+  /api/v1/loans/applications/{applicationId}:
+    get:
+      tags: [Loans]
+      operationId: getMyLoanApplication
+      summary: Read a loan application and decision
+      parameters:
+        - in: path
+          name: applicationId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Application details, content: { application/json: { schema: { $ref: "#/components/schemas/LoanApplication" } } } }
+        "404": { description: Application not found for this customer. }
+
+  /api/v1/loans/applications/{applicationId}/accept:
+    post:
+      tags: [Loans]
+      operationId: acceptApprovedLoan
+      summary: Accept approved terms and disburse the loan
+      description: Ledger performs an idempotent double-entry disbursement. The customer must have an active Ledger wallet account in the loan currency.
+      parameters:
+        - in: path
+          name: applicationId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Active loan and Ledger journal reference, content: { application/json: { schema: { $ref: "#/components/schemas/Loan" } } } }
+        "404": { description: Application not found for this customer. }
+        "409": { description: Application is not approved. }
+        "422": { description: Ledger rejected the disbursement. }
+        "503": { description: Ledger is unavailable; retry safely. }
+
+  /api/v1/loans/{loanId}/schedule:
+    get:
+      tags: [Loans]
+      operationId: getLoanSchedule
+      summary: Read the fixed monthly installment schedule
+      parameters:
+        - in: path
+          name: loanId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Amortization schedule, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Installment" } } } } }
+        "404": { description: Loan not found for this customer. }
+
+  /api/v1/loans/{loanId}/installments/{number}/repay:
+    post:
+      tags: [Loans]
+      operationId: retryLoanRepayment
+      summary: Attempt a due installment repayment
+      description: A failed insufficient-funds attempt does not debit the wallet. The scheduled worker retries due installments daily using a stable Ledger operation ID.
+      parameters:
+        - in: path
+          name: loanId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: number
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200": { description: Attempt result, content: { application/json: { schema: { $ref: "#/components/schemas/RepaymentAttempt" } } } }
+        "404": { description: Loan or installment not found for this customer. }
+        "409": { description: Installment is not due yet. }
+
+  /api/v1/loans/internal/repayments/run:
+    post:
+      tags: [Loans (internal)]
+      operationId: runDueLoanRepayments
+      summary: Trigger due repayment processing
+      description: Operator-only maintenance route. Production deployments should invoke the scheduled worker internally.
+      responses:
+        "200": { description: Number of due installments processed, content: { application/json: { schema: { type: object, required: [processed], properties: { processed: { type: integer, minimum: 0 } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: Caller lacks the platform-operator role. }
 
   /api/v1/notifications/me:
     get:
@@ -219,6 +411,69 @@ paths:
         "409": { description: operationId was reused with a different request. }
         "422": { description: Invalid account, amount, or currency. }
 
+  /internal/ledger/accounts/{walletId}/{currency}/status:
+    servers:
+      - url: http://localhost:8085
+        description: Internal Ledger API; wallet-service role required.
+    patch:
+      tags: ["Ledger (internal)"]
+      operationId: setLedgerWalletAccountStatus
+      summary: Change a wallet Ledger account status
+      parameters:
+        - in: path
+          name: walletId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: currency
+          required: true
+          schema: { type: string, pattern: "^[A-Z]{3}$" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [status], properties: { status: { type: string, enum: [ACTIVE, BLOCKED, CLOSED] } } }
+      responses:
+        "200": { description: Account status updated. }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { description: Account is missing or cannot be closed with a non-zero balance. }
+
+  /internal/ledger/loan-disbursements:
+    servers:
+      - url: http://localhost:8085
+        description: Internal Ledger API; loan-service role required.
+    post:
+      tags: ["Ledger (internal)"]
+      operationId: postLoanDisbursement
+      summary: Post an idempotent loan disbursement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoanDisbursementRequest" }
+      responses:
+        "200": { description: Balanced disbursement journal, content: { application/json: { schema: { $ref: "#/components/schemas/LedgerPostingResponse" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { description: Active wallet account or valid amount required. }
+
+  /internal/ledger/loan-repayments:
+    servers:
+      - url: http://localhost:8085
+        description: Internal Ledger API; loan-service role required.
+    post:
+      tags: ["Ledger (internal)"]
+      operationId: postLoanRepayment
+      summary: Post a balanced, idempotent loan repayment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoanRepaymentRequest" }
+      responses:
+        "200": { description: Balanced principal and interest journal, content: { application/json: { schema: { $ref: "#/components/schemas/LedgerPostingResponse" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { description: Invalid amount, inactive account, or insufficient wallet funds. }
+
   /internal/ledger/transfers:
     servers:
       - url: http://localhost:8085
@@ -293,13 +548,117 @@ components:
     Forbidden:
       description: Valid token lacks the required realm role.
   schemas:
-    ScaffoldResponse:
+    CustomerProfile:
       type: object
-      required: [status, service, note]
+      required: [customerId, firstName, lastName, email, status, createdAt]
       properties:
-        status: { type: string, const: skeleton }
-        service: { type: string }
-        note: { type: string }
+        customerId: { type: string, format: uuid }
+        firstName: { type: string }
+        lastName: { type: string }
+        email: { type: string, format: email }
+        status: { type: string, enum: [ACTIVE, PENDING, SUSPENDED, CLOSED] }
+        createdAt: { type: string, format: date-time }
+    CustomerOnboardingRequest:
+      type: object
+      required: [firstName, lastName, email]
+      properties:
+        firstName: { type: string, maxLength: 120 }
+        lastName: { type: string, maxLength: 120 }
+        email: { type: string, format: email, maxLength: 254 }
+    Wallet:
+      type: object
+      required: [walletId, customerId, status, createdAt, currencies]
+      properties:
+        walletId: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        status: { type: string, enum: [ACTIVE, BLOCKED, CLOSED] }
+        createdAt: { type: string, format: date-time }
+        currencies: { type: array, items: { $ref: "#/components/schemas/WalletCurrency" } }
+    WalletCurrency:
+      type: object
+      required: [currency, status, enabledAt]
+      properties:
+        currency: { type: string, pattern: "^[A-Z]{3}$" }
+        status: { type: string, enum: [ACTIVE, BLOCKED, CLOSED] }
+        enabledAt: { type: string, format: date-time }
+    WalletBalance:
+      type: object
+      required: [currency, status, balanceMinor]
+      properties:
+        currency: { type: string }
+        status: { type: string }
+        balanceMinor: { type: integer, format: int64 }
+    LoanApplicationRequest:
+      type: object
+      required: [amount, currency, termMonths]
+      properties:
+        amount: { type: number, minimum: 0.01, maximum: 5000, multipleOf: 0.01 }
+        currency: { type: string, pattern: "^[A-Za-z]{3}$" }
+        termMonths: { type: integer, minimum: 3, maximum: 36 }
+    LoanApplication:
+      type: object
+      required: [applicationId, requestedAmount, currency, termMonths, status, decision, reason, ruleVersion, submittedAt]
+      properties:
+        applicationId: { type: string, format: uuid }
+        requestedAmount: { type: number }
+        currency: { type: string }
+        termMonths: { type: integer }
+        status: { type: string, enum: [APPROVED, REJECTED, ACCEPTED] }
+        decision: { type: string, enum: [APPROVED, REJECTED] }
+        reason: { type: string }
+        ruleVersion: { type: string }
+        submittedAt: { type: string, format: date-time }
+    Loan:
+      type: object
+      required: [loanId, applicationId, principalAmount, currency, annualRate, termMonths, status, createdAt]
+      properties:
+        loanId: { type: string, format: uuid }
+        applicationId: { type: string, format: uuid }
+        principalAmount: { type: number }
+        currency: { type: string }
+        annualRate: { type: number }
+        termMonths: { type: integer }
+        status: { type: string, enum: [ACTIVE, PAID, DEFAULTED, CANCELLED] }
+        ledgerTransactionId: { type: string, format: uuid, nullable: true }
+        createdAt: { type: string, format: date-time }
+    Installment:
+      type: object
+      required: [installmentId, installmentNumber, principalDue, interestDue, totalDue, dueDate, status]
+      properties:
+        installmentId: { type: string, format: uuid }
+        installmentNumber: { type: integer }
+        principalDue: { type: number }
+        interestDue: { type: number }
+        totalDue: { type: number }
+        dueDate: { type: string, format: date }
+        status: { type: string, enum: [SCHEDULED, PAID, OVERDUE, CANCELLED] }
+    RepaymentAttempt:
+      type: object
+      properties:
+        operationId: { type: string, format: uuid }
+        installmentId: { type: string, format: uuid }
+        status: { type: string, enum: [PENDING, SUCCEEDED, FAILED] }
+        attemptedAt: { type: string, format: date-time, nullable: true }
+        failureReason: { type: string, nullable: true }
+    LoanDisbursementRequest:
+      type: object
+      required: [operationId, loanId, walletId, amount, currency]
+      properties:
+        operationId: { type: string, format: uuid }
+        loanId: { type: string, format: uuid }
+        walletId: { type: string, format: uuid }
+        amount: { type: number, exclusiveMinimum: 0, multipleOf: 0.01 }
+        currency: { type: string, pattern: "^[A-Z]{3}$" }
+    LoanRepaymentRequest:
+      type: object
+      required: [operationId, loanId, walletId, principal, interest, currency]
+      properties:
+        operationId: { type: string, format: uuid }
+        loanId: { type: string, format: uuid }
+        walletId: { type: string, format: uuid }
+        principal: { type: number, exclusiveMinimum: 0, multipleOf: 0.01 }
+        interest: { type: number, minimum: 0, multipleOf: 0.01 }
+        currency: { type: string, pattern: "^[A-Z]{3}$" }
     CreateTransferRequest:
       type: object
       additionalProperties: false

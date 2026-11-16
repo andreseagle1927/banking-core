@@ -134,6 +134,40 @@ class LedgerPostingServicePostgresTest {
                 "DELETE FROM journal_entries WHERE id=?", entryId));
     }
 
+    @Test
+    void loanDisbursementAndRepaymentAreBalancedAndIdempotent() {
+        UUID loanId=UUID.randomUUID(),disbursementId=UUID.randomUUID();
+        Map<String,Object> first=transactions.execute(status->ledger.disburseLoan(disbursementId,loanId,ALICE,new BigDecimal("100.00"),"USD"));
+        Map<String,Object> retry=transactions.execute(status->ledger.disburseLoan(disbursementId,loanId,ALICE,new BigDecimal("100.00"),"USD"));
+        assertEquals(first.get("ledgerTransactionId"),retry.get("ledgerTransactionId"));
+        assertEquals(60000L,balance(ALICE));
+
+        UUID repaymentId=UUID.randomUUID();
+        transactions.execute(status->ledger.repayLoan(repaymentId,loanId,ALICE,new BigDecimal("20.00"),new BigDecimal("2.34"),"USD"));
+        assertEquals(57766L,balance(ALICE));
+        assertEquals(8000L,jdbc.queryForObject("SELECT b.balance_minor FROM account_balances b JOIN ledger_accounts a ON a.id=b.ledger_account_id WHERE a.account_type='LOAN_RECEIVABLE' AND a.currency='USD'",Long.class));
+        assertEquals(0L,jdbc.queryForObject("SELECT COALESCE(SUM(debit_minor-credit_minor),0) FROM journal_entries",Long.class));
+        assertEquals(1,jdbc.queryForObject("SELECT COUNT(*) FROM journal_transactions WHERE operation_id=?",Integer.class,disbursementId));
+    }
+
+    @Test
+    void insufficientLoanRepaymentRollsBackEveryJournalEntry() {
+        UUID loanId=UUID.randomUUID(),operationId=UUID.randomUUID();
+        assertThrows(LedgerPostingService.InsufficientFunds.class,()->transactions.execute(status->
+                ledger.repayLoan(operationId,loanId,ALICE,new BigDecimal("600.00"),new BigDecimal("10.00"),"USD")));
+        assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM journal_transactions WHERE operation_id=?",Integer.class,operationId));
+        assertEquals(50000L,balance(ALICE));
+    }
+
+    @Test
+    void blockedWalletCannotBeDebitedAndNonzeroAccountCannotClose() {
+        transactions.executeWithoutResult(status->ledger.setWalletAccountStatus(ALICE,"USD","BLOCKED"));
+        assertThrows(LedgerPostingService.InvalidAccount.class,()->transactions.execute(status->
+                ledger.transfer(UUID.randomUUID(),ALICE,BOB,new BigDecimal("1.00"),"USD")));
+        assertThrows(LedgerPostingService.InvalidAccount.class,()->transactions.executeWithoutResult(status->
+                ledger.setWalletAccountStatus(ALICE,"USD","CLOSED")));
+    }
+
     private Callable<Boolean> transferAttempt(UUID operationId) {
         return () -> {
             try {

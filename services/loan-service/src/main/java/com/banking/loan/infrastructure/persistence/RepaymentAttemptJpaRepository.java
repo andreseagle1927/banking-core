@@ -6,4 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface RepaymentAttemptJpaRepository extends JpaRepository<RepaymentAttemptEntity, UUID> {
     Optional<RepaymentAttemptEntity> findByOperationId(UUID operationId);
+    Optional<RepaymentAttemptEntity> findByInstallmentId(UUID installmentId);
 }

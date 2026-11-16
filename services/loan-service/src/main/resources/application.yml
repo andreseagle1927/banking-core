@@ -14,12 +14,33 @@ spring:
     open-in-view: false
   security:
     oauth2:
+      client:
+        registration:
+          loan-service:
+            provider: keycloak
+            client-id: ${LOAN_CLIENT_ID:loan-service}
+            client-secret: ${LOAN_CLIENT_SECRET:loan-local-secret}
+            client-authentication-method: client_secret_basic
+            authorization-grant-type: client_credentials
+        provider:
+          keycloak:
+            token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8081/realms/core-banking/protocol/openid-connect/token}
       resourceserver:
         jwt:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/core-banking}
           jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8081/realms/core-banking/protocol/openid-connect/certs}
 management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db
   endpoints:
     web:
       exposure:
         include: health,info
+loan:
+  repayments:
+    cron: ${LOAN_REPAYMENT_CRON:0 0 9 * * *}

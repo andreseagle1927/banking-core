@@ -32,9 +32,15 @@ public class JpaLedgerStoreAdapter implements LedgerStore {
 
     @Override
     public UUID ensurePlatformFundingAccount(String currency) {
-        UUID id = UUID.nameUUIDFromBytes((PLATFORM_FUNDING_OWNER + ":" + currency).getBytes(StandardCharsets.UTF_8));
-        accounts.insertAccountIfAbsent(id, PLATFORM_FUNDING_OWNER, currency, "PLATFORM_FUNDING");
-        UUID accountId = accounts.findByOwnerIdAndCurrency(PLATFORM_FUNDING_OWNER, currency)
+        return ensurePlatformAccount(currency,"PLATFORM_FUNDING");
+    }
+
+    @Override
+    public UUID ensurePlatformAccount(String currency,String accountType) {
+        UUID ownerId = UUID.nameUUIDFromBytes(("core-banking-platform:" + accountType).getBytes(StandardCharsets.UTF_8));
+        UUID id = UUID.nameUUIDFromBytes((ownerId + ":" + currency).getBytes(StandardCharsets.UTF_8));
+        accounts.insertAccountIfAbsent(id, ownerId, currency, accountType);
+        UUID accountId = accounts.findByOwnerIdAndCurrency(ownerId, currency)
                 .orElseThrow(() -> new IllegalStateException("Unable to provision platform funding account")).getId();
         balances.insertIfAbsent(accountId);
         return accountId;
@@ -48,6 +54,16 @@ public class JpaLedgerStoreAdapter implements LedgerStore {
 
     @Override public Optional<Long> findWalletBalance(UUID walletId, String currency) {
         return accounts.findActiveWalletBalance(walletId, currency);
+    }
+
+    @Override public void setWalletAccountStatus(UUID walletId, String currency, String status) {
+        LedgerAccountEntity account=accounts.findByOwnerIdAndCurrencyAndAccountType(walletId,currency,"CUSTOMER_WALLET")
+                .orElseThrow(()->new LedgerStore.AccountStateException("Wallet ledger account does not exist"));
+        AccountBalanceEntity balance=balances.findLockedByAccountId(account.getId())
+                .orElseThrow(()->new LedgerStore.AccountStateException("Wallet ledger balance row is missing"));
+        if ("CLOSED".equals(status) && balance.getBalanceMinor()!=0L)
+            throw new LedgerStore.AccountStateException("Wallet currency must have a zero balance before closure");
+        account.setStatus(status);
     }
 
     @Override

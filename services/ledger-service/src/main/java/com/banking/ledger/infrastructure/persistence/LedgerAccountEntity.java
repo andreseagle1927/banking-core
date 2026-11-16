@@ -28,4 +28,5 @@ public class LedgerAccountEntity {
     public String getCurrency() { return currency; }
     public String getAccountType() { return accountType; }
     public String getStatus() { return status; }
+    public void setStatus(String status) { this.status=status; }
 }

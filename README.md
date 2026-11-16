@@ -6,12 +6,15 @@ Java 21 / Spring Boot monorepo for a closed-loop digital banking prototype. Each
 
 - Seven runnable Spring applications across eight Maven modules: the gateway, six business services, and a shared security library.
 - Keycloak JWT validation at the gateway and each service.
-- A working same-currency transfer path: authenticated request → idempotent Transfer record → atomic Ledger posting → transactional transfer outbox → Kafka event → deduplicated notification records.
+- Customer self-onboarding tied to the authenticated identity, with one persistent wallet per customer and enabled currency pockets.
+- Ledger-backed wallet account provisioning, status controls, and balance reads. Ledger remains the only source of monetary balances.
+- A working same-currency transfer path: authenticated request → idempotent Transfer record → atomic Ledger posting → transactional transfer outbox → Kafka event → deduplicated notification records and queued local email delivery.
+- Rule-based loan applications, persisted eligibility decisions, fixed-rate monthly amortization schedules, Ledger disbursements, and idempotent repayment attempts with scheduled retries.
 - Simulated platform funding for local demos. Registration does not create money.
 - PostgreSQL/Flyway migrations and Hibernate validation for all six service databases. Append-only journal entry protection is enforced by a database trigger.
 - Local Compose infrastructure for PostgreSQL, Redis, Kafka, Keycloak, and the service containers.
 
-Customer, Wallet, and Loan remain authenticated API skeletons, with initial database schemas and Hibernate mappings available for future workflows. Lending, reconciliation, external notification delivery, observability, and performance targets remain future implementation work. Redis is provisioned but unused; Kafka carries post-commit transfer events and is not in the atomic money path.
+Loan rules are deterministic prototype rules (12% fixed APR, 3–36 month term, up to 5000.00 per application, and up to 10000.00 active principal exposure); they are not validated underwriting. Repayments are attempted daily at 09:00 UTC and retry with the same Ledger operation ID. Notification email is captured by local Mailpit and is not sent to real addresses. Reconciliation, production-grade lending controls, observability, and performance targets remain future work. Redis is provisioned but unused; Kafka carries post-commit transfer events and is not in the atomic money path.
 
 This is a development prototype, not a production-ready bank. Local Keycloak passwords, database passwords, plaintext transport, simulated funding, and lack of real lending/compliance controls are strictly for local development.
 
@@ -25,20 +28,38 @@ mvn -B -ntp package -DskipTests
 docker compose up --build
 ```
 
-The automated suite includes Transfer and Notification unit tests, Ledger API authorization checks, and PostgreSQL Testcontainers database tests. See the [verification plan](docs/architecture/verification-plan.md) for covered release gates and checks still to add.
+The automated suite covers Customer and Wallet workflows, Transfer behavior, Ledger authorization and PostgreSQL posting invariants, Loan decisions and schedules, Notification delivery, and PostgreSQL Testcontainers schema checks. See the [verification plan](docs/architecture/verification-plan.md) for covered release gates and checks still to add.
 
-The gateway is at `http://localhost:8080`, Swagger UI at `http://localhost:8080/swagger-ui.html`, Keycloak at `http://localhost:8081`, and the Ledger's internal development port at `http://localhost:8085`. Swagger documents the current public routes and local internal Ledger routes; Customer, Wallet, and Loan are explicitly marked as scaffolds. Use the Authorize button with a local Keycloak access token to try public routes. Ledger operations are documented against its direct local port and require the appropriate role. Infrastructure credentials and ports are defined in `compose.yaml`; do not reuse them outside local development. First startup can take a few minutes while images build and Keycloak initializes. Database init scripts run only when the PostgreSQL volume is first created.
+## Kubernetes
 
-Once the stack is healthy, run `./scripts/demo-transfer.sh` to provision the demo accounts, simulate Alice's funding, make an idempotent Alice-to-Bob transfer, wait for Bob's notification, and print both Ledger balances. It requires `curl` and `python3`. The script accepts `KEYCLOAK_URL`, `GATEWAY_URL`, `LEDGER_URL`, `ALICE_PASSWORD`, `BOB_PASSWORD`, `OPERATOR_PASSWORD`, `TRANSFER_AMOUNT`, and `CURRENCY` overrides.
+Deploy to Kind with `./scripts/kind-deploy.sh`, or use the provider-neutral cloud profile in [the Kubernetes deployment guide](docs/deployment/kubernetes.md). The Helm chart keeps Ledger private, includes local development dependencies only in the local profile, and expects external managed services plus an operator-provided Secret for the cloud profile.
+
+The gateway is at `http://localhost:8080`, Swagger UI at `http://localhost:8080/swagger-ui.html`, Keycloak at `http://localhost:8081`, the Ledger's internal development port at `http://localhost:8085`, and Mailpit at `http://localhost:8025`. If port 8080 is already occupied, start with `GATEWAY_PORT=8180 docker compose up --build -d` and set `GATEWAY_URL=http://localhost:8180` when running the demo script. Swagger documents the customer, wallet, transfer, loan, notification, and internal Ledger APIs. Use the Authorize button with a local Keycloak access token to try public routes. Internal Ledger operations require service or operator roles. Infrastructure credentials and ports are defined in `compose.yaml`; do not reuse them outside local development. First startup can take a few minutes while images build and Keycloak initializes. The Keycloak bootstrap step adds missing service clients and roles to an existing local realm without deleting its volume. Database init scripts run only when the PostgreSQL volume is first created.
+
+Once the stack is healthy, run `./scripts/demo-transfer.sh` to onboard Alice and Bob, open their wallets, enable USD pockets, simulate Alice's funding, transfer money, and confirm the recipient notification. It requires `curl` and `python3`. The script accepts `KEYCLOAK_URL`, `GATEWAY_URL`, `LEDGER_URL`, `ALICE_PASSWORD`, `BOB_PASSWORD`, `OPERATOR_PASSWORD`, `TRANSFER_AMOUNT`, and `CURRENCY` overrides.
 
 ## Try the transfer workflow
 
-The imported local users have fixed UUID subjects and completed demo profiles so they can stand in for wallet owner IDs during this prototype. Obtain an Alice access token (requires `curl` and `jq`):
+The imported local users have fixed UUID subjects used as customer and wallet IDs in this prototype. Obtain Alice and Bob access tokens (requires `curl` and `jq`):
 
 ```bash
 ALICE_TOKEN=$(curl -fsS -X POST http://localhost:8081/realms/core-banking/protocol/openid-connect/token \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   -d 'client_id=banking-local&grant_type=password&username=alice&password=alice-local-password' | jq -r .access_token)
+```
+
+Create each customer profile and wallet, then enable the currency pocket. The Wallet Service provisions each Ledger account using its service identity:
+
+```bash
+BOB_TOKEN=$(curl -fsS -X POST http://localhost:8081/realms/core-banking/protocol/openid-connect/token \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'client_id=banking-local&grant_type=password&username=bob&password=bob-local-password' | jq -r .access_token)
+curl -fsS -X POST http://localhost:8080/api/v1/customers/me -H "Authorization: Bearer $ALICE_TOKEN" -H 'Content-Type: application/json' -d '{"firstName":"Alice","lastName":"Demo","email":"alice@example.local"}'
+curl -fsS -X POST http://localhost:8080/api/v1/customers/me -H "Authorization: Bearer $BOB_TOKEN" -H 'Content-Type: application/json' -d '{"firstName":"Bob","lastName":"Demo","email":"bob@example.local"}'
+curl -fsS -X POST http://localhost:8080/api/v1/wallets/me -H "Authorization: Bearer $ALICE_TOKEN"
+curl -fsS -X POST http://localhost:8080/api/v1/wallets/me -H "Authorization: Bearer $BOB_TOKEN"
+curl -fsS -X PUT http://localhost:8080/api/v1/wallets/me/currencies/USD -H "Authorization: Bearer $ALICE_TOKEN"
+curl -fsS -X PUT http://localhost:8080/api/v1/wallets/me/currencies/USD -H "Authorization: Bearer $BOB_TOKEN"
 ```
 
 Ledger account provisioning and simulated funding require the separate local `operator` account. Customer tokens cannot provision accounts, fund wallets, or call Ledger's posting endpoint directly:
@@ -49,13 +70,28 @@ OPERATOR_TOKEN=$(curl -fsS -X POST http://localhost:8081/realms/core-banking/pro
   -d 'client_id=banking-local&grant_type=password&username=operator&password=operator-local-password' | jq -r .access_token)
 ```
 
-Create USD ledger accounts and simulate a controlled $500 credit to Alice. Bob's account starts at zero:
+Simulate a controlled $500 credit to Alice. Bob's enabled account starts at zero:
 
 ```bash
-curl -fsS -X POST http://localhost:8085/internal/ledger/accounts -H "Authorization: Bearer $OPERATOR_TOKEN" -H 'Content-Type: application/json' -d '{"walletId":"11111111-1111-4111-8111-111111111111","currency":"USD"}'
-curl -fsS -X POST http://localhost:8085/internal/ledger/accounts -H "Authorization: Bearer $OPERATOR_TOKEN" -H 'Content-Type: application/json' -d '{"walletId":"22222222-2222-4222-8222-222222222222","currency":"USD"}'
 curl -fsS -X POST http://localhost:8085/internal/ledger/funding -H "Authorization: Bearer $OPERATOR_TOKEN" -H 'Content-Type: application/json' -d '{"operationId":"f0000000-0000-4000-8000-000000000001","walletId":"11111111-1111-4111-8111-111111111111","amount":"500.00","currency":"USD"}'
 ```
+
+## Try a loan
+
+After onboarding and wallet setup, apply for a loan. Reuse the same idempotency key only when retrying the same request. An approved application is not disbursed until its owner accepts it; the wallet must have an enabled Ledger account in the requested currency. For the demo rules, applications up to 5000.00 and 3–36 months are evaluated automatically against customer and active-exposure limits.
+
+```bash
+APPLICATION=$(curl -fsS -X POST http://localhost:8080/api/v1/loans/applications \
+  -H "Authorization: Bearer $ALICE_TOKEN" -H 'Idempotency-Key: alice-loan-demo-001' \
+  -H 'Content-Type: application/json' -d '{"amount":"1000.00","currency":"USD","termMonths":12}')
+APPLICATION_ID=$(jq -r .applicationId <<<"$APPLICATION")
+LOAN=$(curl -fsS -X POST "http://localhost:8080/api/v1/loans/applications/$APPLICATION_ID/accept" \
+  -H "Authorization: Bearer $ALICE_TOKEN")
+LOAN_ID=$(jq -r .loanId <<<"$LOAN")
+curl -fsS -H "Authorization: Bearer $ALICE_TOKEN" "http://localhost:8080/api/v1/loans/$LOAN_ID/schedule"
+```
+
+The schedule uses a fixed 12% APR and a final-installment rounding adjustment. Repayments are attempted at 09:00 UTC on or after each due date; the customer may also retry a due installment through `POST /api/v1/loans/{loanId}/installments/{number}/repay`. An early manual repayment is rejected. Insufficient funds leave the installment overdue without debiting the wallet; the scheduled worker retries daily. Transfer emails are captured by Mailpit at `http://localhost:8025`, never sent to real addresses.
 
 Post $100 to Bob using any unique idempotency key (reusing the same key and payload returns the original transfer):
 

@@ -10,7 +10,7 @@ From the repository root:
 mvn -B -ntp test
 ```
 
-Transfer and Notification unit tests do not require external services. PostgreSQL Testcontainers checks run the real Flyway migrations and Hibernate schema validation for Customer, Wallet, Transfer, Ledger, Loan, and Notification. Transfer persistence checks exercise idempotent insertion and atomic completion/outbox persistence; Notification persistence checks verify event redelivery deduplication. The Ledger integration suite also checks database transactions, row locking, idempotency, journal balance, and rollback. To run only the Ledger database suite:
+Customer and Wallet application tests verify identity-bound profile onboarding, wallet lifecycle, currency pockets, Ledger-backed balances, and account status propagation. Loan application tests cover deterministic decisions, idempotent applications and postings, amortization schedules, repayment attempts, and ownership. Transfer and Notification unit tests cover request retries and event deduplication/delivery. PostgreSQL Testcontainers checks run the real Flyway migrations and Hibernate schema validation for all six service databases. The Ledger integration suite also checks database transactions, row locking, idempotency, journal balance, loan postings, and rollback. To run only the Ledger database suite:
 
 ```bash
 mvn -pl services/ledger-service -am -Dtest=LedgerPostingServicePostgresTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -26,8 +26,10 @@ Run the complete reactor package and tests with `mvn -B -ntp verify`. CI uploads
 - Ledger API tests reject unauthenticated requests, deny customers account-provisioning and posting roles, and allow the dedicated ledger-poster role to post.
 - Ledger PostgreSQL tests assert the journal is balanced, sender/recipient balances conserve value, simultaneous $400 debits against $500 yield exactly one success, retries reuse one posting, conflicting retries fail, and insufficient funds roll back the inserted journal.
 - Notification application tests assert both parties receive records once and duplicate events do not create more records.
+- Customer and Wallet application tests cover onboarding persistence, wallet and pocket idempotency, ISO currency validation, authoritative Ledger balance reads, and wallet/account status changes.
+- Loan tests cover automatic decisions and reason persistence, fixed-rate amortization with final-installment rounding, Ledger disbursement references, installment state, and safe retries.
 
-The automated tests do not yet exercise HTTP authentication end to end or Kafka delivery against a broker. The local demo covers a successful Keycloak-authenticated transfer and notification delivery, while duplicate/out-of-order Kafka delivery, outbox crash recovery, and repeatable automated full-stack regression remain follow-up work.
+The automated tests do not yet exercise all HTTP flows with Keycloak or Kafka delivery against a broker. The local Compose demo covers authenticated onboarding, wallet provisioning, funding, transfer, and Kafka-backed notification delivery; duplicate/out-of-order Kafka delivery, outbox crash recovery, and repeatable automated full-stack regression remain follow-up work.
 
 ## Checks completed on 2026-11-14
 
@@ -54,9 +56,18 @@ The automated tests do not yet exercise HTTP authentication end to end or Kafka 
 - Attempt to read another customer's transfer and to provide a client-selected sender identity; deny access or ignore the supplied sender identity.
 - Verify journal entry updates/deletes fail and correction is represented with a reversing journal (append-only trigger exists; mutation test and correction workflow remain planned).
 
+## Checks completed on 2026-11-15
+
+- `mvn -B -ntp verify` passed across all nine Maven modules with 36 tests, including PostgreSQL 17.6 Testcontainers schema and Ledger posting checks.
+- Compose configuration parsed successfully and all six business services, the API Gateway, PostgreSQL, Redis, Kafka, Keycloak, Mailpit, and the Keycloak bootstrap job started successfully. The bootstrap job upgraded an existing Keycloak realm in place and can be rerun idempotently.
+- Because local port 8080 was already occupied, the runtime check used `GATEWAY_PORT=8180`; the gateway `/actuator/health` returned `UP`.
+- `scripts/demo-transfer.sh` completed an authenticated Alice-to-Bob USD transfer through customer onboarding, wallet creation, currency provisioning, simulated funding, Ledger posting, Kafka notification, and notification reads. It returned `COMPLETED`; the Ledger reported Alice at 80000 and Bob at 20000 minor units.
+- Mailpit contained sender and recipient emails after the transfer. The authenticated Wallet API returned Alice's USD balance from Ledger after the transfer and loan disbursement.
+- An authenticated loan application was automatically approved, accepted, disbursed by Ledger, and returned a six-installment monthly schedule. An immediate attempt to repay future installment 1 returned HTTP 409 as designed; repayment posting and insufficient-funds behavior are covered at the application/Ledger test boundary, while the due-date scheduler is not time-accelerated in this runtime check.
+
 ## Target service and platform scenarios
 
 - Verify independent module builds and application health checks; verify gateway routes reject missing/invalid JWTs and validate accepted Keycloak issuers.
 - Verify PostgreSQL restarts preserve service state; verify unavailable Kafka/Redis do not alter ledger postings.
-- Add loan checks for deterministic approval reasons, amortization schedules, final-installment rounding, duplicate disbursement, insufficient-funds repayment, and repayment retry policy after product policy is agreed.
+- Extend the full-stack suite to drive a due installment through repayment, prove retry after insufficient funds, and reconcile a lost Ledger response across a Loan restart.
 - Measure the proposed 100 transfers/s, 500 balance reads/s, and p95 below 500 ms in a documented environment; these targets are not currently measured.

@@ -1,6 +1,8 @@
 package com.banking.notification.application;
 
 import com.banking.notification.application.port.out.NotificationStore;
+import com.banking.notification.application.port.out.CustomerContactPort;
+import com.banking.notification.application.port.out.NotificationDeliveryPort;
 import com.banking.notification.domain.Notification;
 import com.banking.notification.domain.TransferCompletedEvent;
 import java.math.BigDecimal;
@@ -16,17 +18,23 @@ public class NotificationApplicationService {
     private static final String TRANSFER_COMPLETED = "TransferCompleted";
     private static final String NOTIFICATION_TYPE = "TRANSFER_COMPLETED";
     private final NotificationStore store;
-    public NotificationApplicationService(NotificationStore store) { this.store = store; }
+    private final CustomerContactPort contacts;
+    private final NotificationDeliveryPort delivery;
+    public NotificationApplicationService(NotificationStore store,CustomerContactPort contacts,NotificationDeliveryPort delivery) { this.store = store;this.contacts=contacts;this.delivery=delivery; }
 
     @Transactional
     public void createTransferNotifications(TransferCompletedEvent event) {
         validate(event);
         if (!store.markEventProcessed(event.eventId(), event.eventType(), Instant.now())) return;
         Instant createdAt = Instant.now();
-        store.saveNotification(new Notification(UUID.randomUUID(), event.aggregateId(), NOTIFICATION_TYPE,
-                "Transfer of " + event.amount() + " " + event.currency() + " completed", createdAt), event.senderWalletId());
-        store.saveNotification(new Notification(UUID.randomUUID(), event.aggregateId(), NOTIFICATION_TYPE,
-                "You received " + event.amount() + " " + event.currency(), createdAt), event.recipientWalletId());
+        Notification sender=new Notification(UUID.randomUUID(), event.aggregateId(), NOTIFICATION_TYPE,
+                "Transfer of " + event.amount() + " " + event.currency() + " completed", createdAt);
+        Notification recipient=new Notification(UUID.randomUUID(), event.aggregateId(), NOTIFICATION_TYPE,
+                "You received " + event.amount() + " " + event.currency(), createdAt);
+        store.saveNotification(sender,event.senderWalletId());
+        store.saveNotification(recipient,event.recipientWalletId());
+        contacts.emailFor(event.senderWalletId()).ifPresent(email->delivery.enqueue(sender.id(),email,"Transfer completed",sender.message()));
+        contacts.emailFor(event.recipientWalletId()).ifPresent(email->delivery.enqueue(recipient.id(),email,"You received a transfer",recipient.message()));
     }
 
     @Transactional(readOnly = true)

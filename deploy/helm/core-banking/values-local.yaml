@@ -1,0 +1,89 @@
+# Development-only credentials. Never use this file for a shared or production cluster.
+global:
+  imagePullPolicy: IfNotPresent
+  auth:
+    issuerUri: http://localhost:8081/realms/core-banking
+    jwkSetUri: http://keycloak:8080/realms/core-banking/protocol/openid-connect/certs
+    tokenUri: http://keycloak:8080/realms/core-banking/protocol/openid-connect/token
+
+secrets:
+  create: true
+  data:
+    postgres-admin-password: local_postgres
+    customer-db-password: customer_local
+    wallet-db-password: wallet_local
+    transfer-db-password: transfer_local
+    ledger-db-password: ledger_local
+    loan-db-password: loan_local
+    notification-db-password: notification_local
+    keycloak-admin-password: admin
+    transfer-client-secret: transfer-local-secret
+    wallet-client-secret: wallet-local-secret
+    loan-client-secret: loan-local-secret
+    notification-client-secret: notification-local-secret
+
+localDependencies:
+  enabled: true
+
+services:
+  api-gateway:
+    env:
+      CUSTOMER_SERVICE_URL: http://customer-service:8082
+      WALLET_SERVICE_URL: http://wallet-service:8083
+      TRANSFER_SERVICE_URL: http://transfer-service:8084
+      LOAN_SERVICE_URL: http://loan-service:8086
+      NOTIFICATION_SERVICE_URL: http://notification-service:8087
+  customer-service:
+    env:
+      DB_URL: jdbc:postgresql://postgres:5432/customer_db
+      DB_USERNAME: customer_user
+    secretEnv:
+      - { name: DB_PASSWORD, key: customer-db-password }
+  wallet-service:
+    env:
+      DB_URL: jdbc:postgresql://postgres:5432/wallet_db
+      DB_USERNAME: wallet_user
+      CUSTOMER_SERVICE_URL: http://customer-service:8082
+      LEDGER_URL: http://ledger-service:8085
+      LEDGER_CLIENT_ID: wallet-service
+    secretEnv:
+      - { name: DB_PASSWORD, key: wallet-db-password }
+      - { name: LEDGER_CLIENT_SECRET, key: wallet-client-secret }
+  transfer-service:
+    env:
+      DB_URL: jdbc:postgresql://postgres:5432/transfer_db
+      DB_USERNAME: transfer_user
+      LEDGER_URL: http://ledger-service:8085
+      LEDGER_CLIENT_ID: transfer-service
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    secretEnv:
+      - { name: DB_PASSWORD, key: transfer-db-password }
+      - { name: LEDGER_CLIENT_SECRET, key: transfer-client-secret }
+  ledger-service:
+    env:
+      DB_URL: jdbc:postgresql://postgres:5432/ledger_db
+      DB_USERNAME: ledger_user
+    secretEnv:
+      - { name: DB_PASSWORD, key: ledger-db-password }
+  loan-service:
+    env:
+      DB_URL: jdbc:postgresql://postgres:5432/loan_db
+      DB_USERNAME: loan_user
+      CUSTOMER_SERVICE_URL: http://customer-service:8082
+      LEDGER_URL: http://ledger-service:8085
+      LOAN_CLIENT_ID: loan-service
+    secretEnv:
+      - { name: DB_PASSWORD, key: loan-db-password }
+      - { name: LOAN_CLIENT_SECRET, key: loan-client-secret }
+  notification-service:
+    env:
+      DB_URL: jdbc:postgresql://postgres:5432/notification_db
+      DB_USERNAME: notification_user
+      CUSTOMER_SERVICE_URL: http://customer-service:8082
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      NOTIFICATION_CLIENT_ID: notification-service
+    secretEnv:
+      - { name: DB_PASSWORD, key: notification-db-password }
+      - { name: NOTIFICATION_CLIENT_SECRET, key: notification-client-secret }

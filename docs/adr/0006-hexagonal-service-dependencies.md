@@ -13,4 +13,4 @@ Organize each service around inbound adapters, application use cases, domain typ
 
 ## Consequences
 
-Transfer, Ledger, and Notification use this dependency direction in the initial workflow. Customer, Wallet, and Loan have initial persistence models but remain thin authenticated stubs until their use cases are implemented. This applies SOLID through single-purpose classes and services, extension through ports, substitutable adapters, consumer-focused interfaces, and dependency inversion. Framework annotations stay in service/application and infrastructure code; core domain values use JDK types only.
+Customer, Wallet, Transfer, Ledger, Loan, and Notification use this dependency direction for the implemented workflows. This applies SOLID through single-purpose classes and services, extension through ports, substitutable adapters, consumer-focused interfaces, and dependency inversion. Framework annotations stay in service/application and infrastructure code; core domain values use JDK types only.

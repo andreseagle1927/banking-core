@@ -40,18 +40,31 @@ post_json() {
   HTTP_BODY=${response%$'\n'*}
 }
 
+put_json() {
+  local url=$1 token=$2 body=$3 response
+  response=$(curl -sS -X PUT "$url" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' --data "$body" -w $'\n%{http_code}')
+  HTTP_CODE=${response##*$'\n'}
+  HTTP_BODY=${response%$'\n'*}
+}
+
 ALICE_TOKEN=$(token_for alice "${ALICE_PASSWORD:-alice-local-password}")
 BOB_TOKEN=$(token_for bob "${BOB_PASSWORD:-bob-local-password}")
 OPERATOR_TOKEN=$(token_for operator "${OPERATOR_PASSWORD:-operator-local-password}")
 FUNDING_OPERATION_ID=$(python3 -c 'import uuid; print(uuid.uuid4())')
 IDEMPOTENCY_KEY="demo-$(python3 -c 'import uuid; print(uuid.uuid4())')"
 
-post_json "$LEDGER_URL/internal/ledger/accounts" "$OPERATOR_TOKEN" \
-  "{\"walletId\":\"$ALICE_ID\",\"currency\":\"$CURRENCY\"}"
-[[ $HTTP_CODE == 200 ]] || { echo "Alice account provisioning failed (HTTP $HTTP_CODE): $HTTP_BODY" >&2; exit 1; }
-post_json "$LEDGER_URL/internal/ledger/accounts" "$OPERATOR_TOKEN" \
-  "{\"walletId\":\"$BOB_ID\",\"currency\":\"$CURRENCY\"}"
-[[ $HTTP_CODE == 200 ]] || { echo "Bob account provisioning failed (HTTP $HTTP_CODE): $HTTP_BODY" >&2; exit 1; }
+post_json "$GATEWAY_URL/api/v1/customers/me" "$ALICE_TOKEN" '{"firstName":"Alice","lastName":"Demo","email":"alice@example.local"}'
+[[ $HTTP_CODE == 201 ]] || { echo "Alice onboarding failed (HTTP $HTTP_CODE): $HTTP_BODY" >&2; exit 1; }
+post_json "$GATEWAY_URL/api/v1/customers/me" "$BOB_TOKEN" '{"firstName":"Bob","lastName":"Demo","email":"bob@example.local"}'
+[[ $HTTP_CODE == 201 ]] || { echo "Bob onboarding failed (HTTP $HTTP_CODE): $HTTP_BODY" >&2; exit 1; }
+post_json "$GATEWAY_URL/api/v1/wallets/me" "$ALICE_TOKEN" ''
+[[ $HTTP_CODE == 201 ]] || { echo "Alice wallet creation failed (HTTP $HTTP_CODE): $HTTP_BODY" >&2; exit 1; }
+post_json "$GATEWAY_URL/api/v1/wallets/me" "$BOB_TOKEN" ''
+[[ $HTTP_CODE == 201 ]] || { echo "Bob wallet creation failed (HTTP $HTTP_CODE): $HTTP_BODY" >&2; exit 1; }
+put_json "$GATEWAY_URL/api/v1/wallets/me/currencies/$CURRENCY" "$ALICE_TOKEN" '{}'
+[[ $HTTP_CODE == 200 ]] || { echo "Alice currency setup failed (HTTP $HTTP_CODE): $HTTP_BODY" >&2; exit 1; }
+put_json "$GATEWAY_URL/api/v1/wallets/me/currencies/$CURRENCY" "$BOB_TOKEN" '{}'
+[[ $HTTP_CODE == 200 ]] || { echo "Bob currency setup failed (HTTP $HTTP_CODE): $HTTP_BODY" >&2; exit 1; }
 post_json "$LEDGER_URL/internal/ledger/funding" "$OPERATOR_TOKEN" \
   "{\"operationId\":\"$FUNDING_OPERATION_ID\",\"walletId\":\"$ALICE_ID\",\"amount\":\"500.00\",\"currency\":\"$CURRENCY\"}"
 [[ $HTTP_CODE == 200 ]] || { echo "Simulated funding failed (HTTP $HTTP_CODE): $HTTP_BODY" >&2; exit 1; }

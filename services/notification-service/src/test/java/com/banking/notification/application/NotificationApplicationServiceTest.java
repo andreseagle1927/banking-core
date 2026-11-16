@@ -8,9 +8,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.banking.notification.application.port.out.NotificationStore;
+import com.banking.notification.application.port.out.CustomerContactPort;
+import com.banking.notification.application.port.out.NotificationDeliveryPort;
 import com.banking.notification.domain.TransferCompletedEvent;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,13 +23,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class NotificationApplicationServiceTest {
     @Mock NotificationStore store;
+    @Mock CustomerContactPort contacts;
+    @Mock NotificationDeliveryPort delivery;
     private NotificationApplicationService service;
     private final UUID sender = UUID.randomUUID();
     private final UUID recipient = UUID.randomUUID();
     private final UUID eventId = UUID.randomUUID();
 
     @BeforeEach
-    void setUp() { service = new NotificationApplicationService(store); }
+    void setUp() { service = new NotificationApplicationService(store,contacts,delivery); org.mockito.Mockito.lenient().when(contacts.emailFor(any())).thenReturn(Optional.empty()); }
 
     @Test
     void createsOneNotificationForEachPartyForANewEvent() {
