@@ -93,7 +93,9 @@ metadata:
   name: kafka
 spec:
   selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: kafka }
-  ports: [{ name: kafka, port: 9092, targetPort: kafka }]
+  ports:
+    - { name: kafka, port: 9092, targetPort: kafka }
+    - { name: controller, port: 9093, targetPort: controller }
 ---
 apiVersion: apps/v1
 kind: StatefulSet
