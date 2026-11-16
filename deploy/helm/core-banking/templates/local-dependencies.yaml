@@ -51,6 +51,7 @@ spec:
           env:
             - { name: POSTGRES_DB, value: postgres }
             - { name: POSTGRES_USER, value: postgres }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef: { name: {{ .Values.secrets.existingSecretName }}, key: postgres-admin-password }
