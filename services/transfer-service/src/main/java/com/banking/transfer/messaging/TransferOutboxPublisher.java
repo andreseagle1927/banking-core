@@ -3,6 +3,7 @@ package com.banking.transfer.messaging;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import com.banking.transfer.infrastructure.persistence.OutboxEventEntity;
 import com.banking.transfer.infrastructure.persistence.OutboxJpaRepository;
 import org.slf4j.Logger;
@@ -20,6 +21,7 @@ public class TransferOutboxPublisher {
     public TransferOutboxPublisher(OutboxJpaRepository outbox, KafkaTemplate<Object, Object> kafka) { this.outbox = outbox; this.kafka = kafka; }
 
     @Scheduled(fixedDelayString = "${OUTBOX_PUBLISH_DELAY_MS:1000}")
+    @SchedulerLock(name = "transferOutboxPublisher", lockAtMostFor = "10m")
     public void publishPending() {
         List<OutboxEventEntity> rows = outbox.findTop50ByPublishedAtIsNullOrderByOccurredAtAsc();
         for (OutboxEventEntity row : rows) {

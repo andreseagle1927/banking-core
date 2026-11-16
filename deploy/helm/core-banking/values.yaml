@@ -1,0 +1,109 @@
+nameOverride: ""
+fullnameOverride: ""
+
+global:
+  imagePullSecrets: []
+  imagePullPolicy: IfNotPresent
+  terminationGracePeriodSeconds: 45
+  auth:
+    issuerUri: http://localhost:8081/realms/core-banking
+    jwkSetUri: http://keycloak:8080/realms/core-banking/protocol/openid-connect/certs
+    tokenUri: http://keycloak:8080/realms/core-banking/protocol/openid-connect/token
+
+secrets:
+  create: false
+  existingSecretName: core-banking-secrets
+  data: {}
+
+gatewayIngress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: banking.local
+  tls: []
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+services:
+  api-gateway:
+    port: 8080
+    image: core-banking/api-gateway:local
+    replicas: 1
+    env: {}
+    secretEnv: []
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: "1", memory: 768Mi }
+  customer-service:
+    port: 8082
+    image: core-banking/customer-service:local
+    replicas: 1
+    env: {}
+    secretEnv: []
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: "1", memory: 768Mi }
+  wallet-service:
+    port: 8083
+    image: core-banking/wallet-service:local
+    replicas: 1
+    env: {}
+    secretEnv: []
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: "1", memory: 768Mi }
+  transfer-service:
+    port: 8084
+    image: core-banking/transfer-service:local
+    replicas: 1
+    env: {}
+    secretEnv: []
+    resources:
+      requests: { cpu: 150m, memory: 384Mi }
+      limits: { cpu: "1", memory: 1Gi }
+  ledger-service:
+    port: 8085
+    image: core-banking/ledger-service:local
+    replicas: 1
+    env: {}
+    secretEnv: []
+    resources:
+      requests: { cpu: 150m, memory: 384Mi }
+      limits: { cpu: "1", memory: 1Gi }
+  loan-service:
+    port: 8086
+    image: core-banking/loan-service:local
+    replicas: 1
+    env: {}
+    secretEnv: []
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: "1", memory: 768Mi }
+  notification-service:
+    port: 8087
+    image: core-banking/notification-service:local
+    replicas: 1
+    env: {}
+    secretEnv: []
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: "1", memory: 768Mi }
+
+localDependencies:
+  enabled: false
+  storageClassName: ""
+  postgres:
+    image: postgres:17.6
+    storage: 5Gi
+  kafka:
+    image: apache/kafka:4.1.2
+    storage: 5Gi
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4.5
+    storage: 1Gi
+  mailpit:
+    image: axllent/mailpit:v1.27.4

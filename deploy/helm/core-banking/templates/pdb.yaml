@@ -1,0 +1,19 @@
+{{- $root := . }}
+{{- range $name, $service := .Values.services }}
+{{- if gt (int $service.replicas) 1 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "core-banking.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "core-banking.selectorLabels" $root | nindent 6 }}
+      app.kubernetes.io/component: {{ $name }}
+{{- end }}
+{{- end }}

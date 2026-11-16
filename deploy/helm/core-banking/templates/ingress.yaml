@@ -1,0 +1,31 @@
+{{- if .Values.gatewayIngress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "core-banking.fullname" . }}
+  labels:
+    {{- include "core-banking.labels" . | nindent 4 }}
+  {{- with .Values.gatewayIngress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.gatewayIngress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.gatewayIngress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.gatewayIngress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: {{ (index .Values.services "api-gateway").port }}
+{{- end }}

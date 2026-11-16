@@ -30,6 +30,10 @@ spring:
               uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8087}
               predicates: [ Path=/api/v1/notifications/** ]
 management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
   endpoints:
     web:
       exposure:
