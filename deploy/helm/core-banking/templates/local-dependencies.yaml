@@ -92,6 +92,7 @@ kind: Service
 metadata:
   name: kafka
 spec:
+  publishNotReadyAddresses: true
   selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: kafka }
   ports:
     - { name: kafka, port: 9092, targetPort: kafka }
