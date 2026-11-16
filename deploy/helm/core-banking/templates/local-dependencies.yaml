@@ -55,6 +55,11 @@ spec:
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef: { name: {{ .Values.secrets.existingSecretName }}, key: postgres-admin-password }
+          startupProbe:
+            exec: { command: ["sh", "-c", "pg_isready -U $POSTGRES_USER"] }
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
           readinessProbe:
             exec: { command: ["sh", "-c", "pg_isready -U $POSTGRES_USER"] }
             initialDelaySeconds: 5
@@ -129,6 +134,11 @@ spec:
             - { name: KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR, value: "1" }
             - { name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS, value: "0" }
             - { name: KAFKA_LOG_DIRS, value: "/var/lib/kafka/data/kafka-logs" }
+          startupProbe:
+            exec: { command: ["/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"] }
+            periodSeconds: 5
+            timeoutSeconds: 8
+            failureThreshold: 60
           readinessProbe:
             exec: { command: ["/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"] }
             initialDelaySeconds: 30
@@ -205,6 +215,11 @@ spec:
             - { name: KC_HOSTNAME, value: "http://localhost:8081" }
             - { name: KC_HTTP_ENABLED, value: "true" }
             - { name: KC_HEALTH_ENABLED, value: "true" }
+          startupProbe:
+            httpGet: { path: /health/ready, port: management }
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
           readinessProbe:
             httpGet: { path: /health/ready, port: management }
             initialDelaySeconds: 15
