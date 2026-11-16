@@ -2,6 +2,8 @@
 
 The `deploy/helm/core-banking` chart deploys the API gateway and six business services as separate Kubernetes Deployments. Each has an internal ClusterIP Service. Only the gateway has an optional Ingress; Ledger has no external route.
 
+The current SSH-only deployment on Andres's host is documented in [server-demo.md](server-demo.md). It uses the local development profile and is separate from the production profile below.
+
 The chart has two profiles:
 
 - `values-local.yaml` runs single-node PostgreSQL, Kafka, Keycloak and Mailpit in the cluster. PostgreSQL, Kafka and Keycloak use persistent volume claims. Redis is omitted because no service uses it.

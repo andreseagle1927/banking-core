@@ -2,6 +2,8 @@
 
 The root `Jenkinsfile` is intended for a Jenkins Multibranch Pipeline running on the deployment host. Jenkins builds trusted repository branches and Git tags. GitHub Actions remains the pull-request gate; do not configure Jenkins to discover pull requests from forks because its agent uses the host Docker daemon. Jenkins publishes SHA-tagged images for `main` and Git tags, then deploys `main` to the `core-banking` Kubernetes namespace.
 
+The currently running private development deployment and its SSH tunnel are documented in [server-demo.md](server-demo.md). Jenkins does not publish or deploy that demo profile.
+
 ## Jenkins host
 
 Jenkins LTS runs on `andres@135.181.182.60` with Java 21. The web UI is bound to `127.0.0.1:18080`; access it through an SSH tunnel instead of exposing the administrator UI publicly:
